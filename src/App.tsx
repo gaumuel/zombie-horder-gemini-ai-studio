@@ -118,6 +118,15 @@ interface SpawnFlash {
   life: number; // in frames
 }
 
+interface BackgroundElement {
+  x: number;
+  y: number;
+  type: 'RUBBLE' | 'CRACK' | 'WALL';
+  size: number;
+  rotation: number;
+  id: number;
+}
+
 interface GameState {
   playerX: number;
   smoothPlayerX?: number;
@@ -136,6 +145,7 @@ interface GameState {
   floatingTexts: FloatingText[];
   dyingSoldiers: DyingSoldier[];
   spawnFlashes: SpawnFlash[];
+  backgroundElements: BackgroundElement[];
   frame: number;
   specialTimer: number; // in frames
   activeSpecial: 'NONE' | 'CURVED' | 'EXPLOSIVE';
@@ -362,6 +372,14 @@ export default function App() {
     floatingTexts: [],
     dyingSoldiers: [],
     spawnFlashes: [],
+    backgroundElements: Array.from({ length: 20 }, (_, i) => ({
+      x: Math.random() * CANVAS_WIDTH,
+      y: Math.random() * CANVAS_HEIGHT,
+      type: (['RUBBLE', 'CRACK', 'WALL'] as const)[Math.floor(Math.random() * 3)],
+      size: 10 + Math.random() * 30,
+      rotation: Math.random() * Math.PI * 2,
+      id: i,
+    })),
     frame: 0,
     specialTimer: 0,
     activeSpecial: 'NONE',
@@ -395,10 +413,10 @@ export default function App() {
         isSpacePressed.current = true;
         e.preventDefault();
       }
-      if (e.key.toLowerCase() === 'a') {
+      if (e.key.toLowerCase() === 'a' || e.key === 'ArrowLeft') {
         isAKeyPressed.current = true;
       }
-      if (e.key.toLowerCase() === 'd') {
+      if (e.key.toLowerCase() === 'd' || e.key === 'ArrowRight') {
         isDKeyPressed.current = true;
       }
     };
@@ -406,10 +424,10 @@ export default function App() {
       if (e.code === 'Space') {
         isSpacePressed.current = false;
       }
-      if (e.key.toLowerCase() === 'a') {
+      if (e.key.toLowerCase() === 'a' || e.key === 'ArrowLeft') {
         isAKeyPressed.current = false;
       }
-      if (e.key.toLowerCase() === 'd') {
+      if (e.key.toLowerCase() === 'd' || e.key === 'ArrowRight') {
         isDKeyPressed.current = false;
       }
     };
@@ -448,6 +466,14 @@ export default function App() {
       floatingTexts: [],
       dyingSoldiers: [],
       spawnFlashes: [],
+      backgroundElements: Array.from({ length: 20 }, (_, i) => ({
+        x: Math.random() * CANVAS_WIDTH,
+        y: Math.random() * CANVAS_HEIGHT,
+        type: (['RUBBLE', 'CRACK', 'WALL'] as const)[Math.floor(Math.random() * 3)],
+        size: 10 + Math.random() * 30,
+        rotation: Math.random() * Math.PI * 2,
+        id: i,
+      })),
       frame: 0,
       specialTimer: 0,
       activeSpecial: 'NONE',
@@ -719,9 +745,12 @@ export default function App() {
     // --- Movement Logic ---
     if (isAKeyPressed.current) {
       newState.playerX = Math.max(UNIT_RADIUS, newState.playerX - PLAYER_SPEED);
-    }
-    if (isDKeyPressed.current) {
+    } else if (isDKeyPressed.current) {
       newState.playerX = Math.min(CANVAS_WIDTH - UNIT_RADIUS, newState.playerX + PLAYER_SPEED);
+    } else if (isPointerDown.current) {
+      // Follow touch/mouse horizontally for mobile-friendly movement
+      const targetX = Math.max(UNIT_RADIUS, Math.min(CANVAS_WIDTH - UNIT_RADIUS, mousePosRef.current.x));
+      newState.playerX = targetX;
     }
     
     // Smooth player movement for better feel
@@ -1274,6 +1303,40 @@ export default function App() {
       ctx.stroke();
     }
 
+    // Draw Background Elements (Ruined City Terrain)
+    gameState.backgroundElements.forEach(el => {
+      ctx.save();
+      ctx.translate(el.x, el.y);
+      ctx.rotate(el.rotation);
+      ctx.globalAlpha = 0.3;
+      
+      if (el.type === 'RUBBLE') {
+        ctx.fillStyle = '#444';
+        ctx.beginPath();
+        ctx.moveTo(-el.size/2, -el.size/2);
+        ctx.lineTo(el.size/2, -el.size/3);
+        ctx.lineTo(el.size/3, el.size/2);
+        ctx.lineTo(-el.size/3, el.size/3);
+        ctx.closePath();
+        ctx.fill();
+      } else if (el.type === 'CRACK') {
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-el.size/2, 0);
+        ctx.lineTo(0, el.size/4);
+        ctx.lineTo(el.size/2, -el.size/4);
+        ctx.stroke();
+      } else if (el.type === 'WALL') {
+        ctx.fillStyle = '#222';
+        ctx.fillRect(-el.size/2, -el.size/4, el.size, el.size/2);
+        ctx.strokeStyle = '#333';
+        ctx.strokeRect(-el.size/2, -el.size/4, el.size, el.size/2);
+      }
+      
+      ctx.restore();
+    });
+
     // --- Entity Rendering ---
     
     // Draw Zombies
@@ -1558,14 +1621,15 @@ export default function App() {
       </div>
 
       {/* Game Canvas Container */}
-      <div className="relative group">
+      <div className="relative group w-full max-w-[450px]">
         <canvas
           ref={canvasRef}
           width={CANVAS_WIDTH}
           height={CANVAS_HEIGHT}
           onMouseMove={handleMouseMove}
           onTouchMove={handleMouseMove}
-          className="rounded-xl shadow-2xl border border-zinc-800 cursor-none touch-none"
+          onPointerDown={handleMouseMove}
+          className="w-full h-auto rounded-xl shadow-2xl border border-zinc-800 cursor-none touch-none"
         />
 
         {/* HUD Overlay */}
@@ -1688,12 +1752,12 @@ export default function App() {
       {/* Instructions */}
       <div className="mt-8 grid grid-cols-2 gap-4 w-full max-w-[400px]">
         <div className="bg-zinc-900/50 p-3 rounded-lg border border-zinc-800 flex items-center gap-3">
-          <div className="w-8 h-8 rounded bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-xs">
-            A/D
+          <div className="w-8 h-8 rounded bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-[10px]">
+            TOUCH
           </div>
           <div className="flex flex-col">
             <span className="text-[10px] uppercase text-zinc-500 font-bold">Move</span>
-            <span className="text-xs">Left / Right</span>
+            <span className="text-xs">Drag to Follow</span>
           </div>
         </div>
         <div className="bg-zinc-900/50 p-3 rounded-lg border border-zinc-800 flex items-center gap-3">
@@ -1701,8 +1765,8 @@ export default function App() {
             <Zap size={16} />
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] uppercase text-zinc-500 font-bold">Aim & Shoot</span>
-            <span className="text-xs">Mouse + Space</span>
+            <span className="text-[10px] uppercase text-zinc-500 font-bold">Shoot</span>
+            <span className="text-xs">Hold to Fire</span>
           </div>
         </div>
       </div>
